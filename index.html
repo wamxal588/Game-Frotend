@@ -1,10 +1,309 @@
 <!DOCTYPE html>
-<html>
+<html lang="tr">
 <head>
-    <title>4 Katlı Bina Oyunu</title>
+  <meta charset="UTF-8">
+  <title>Çizgi Film Temalı 4 Katlı Bina Oyunu</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Comic Sans MS', cursive, sans-serif;
+      background: linear-gradient(to bottom, #a1c4fd 0%, #c2e9fb 100%);
+      color: #333;
+    }
+    #gameCanvas {
+      display: block;
+      margin: 30px auto 0 auto;
+      background: #fffcf2;
+      border-radius: 15px;
+      box-shadow: 0 0 30px #8888cc;
+      border: 5px solid #eccb60;
+    }
+    #ui {
+      text-align: center;
+      margin-top: 20px;
+    }
+    #ui button {
+      padding: 10px 30px;
+      font-size: 20px;
+      border-radius: 8px;
+      border: 2px solid #eccb60;
+      background: #f7e8ab;
+      cursor: pointer;
+      font-family: inherit;
+      margin: 0 8px;
+      transition: background 0.2s;
+    }
+    #ui button:hover {
+      background: #faefc9;
+    }
+    #desc {
+      margin: 18px auto 8px auto;
+      max-width: 640px;
+      font-size: 18px;
+      color: #444;
+      background: #fff7e6;
+      border-radius: 8px;
+      border: 1px solid #eccb60;
+      padding: 10px;
+      box-shadow: 0 1px 8px #eccb60;
+    }
+    #status {
+      font-size: 22px;
+      margin-top: 16px;
+      font-weight: bold;
+    }
+    #result {
+      font-size: 30px;
+      margin-top: 24px;
+      font-weight: bold;
+      color: #27ae60;
+      text-shadow: 2px 2px #fff7e6;
+    }
+    #result.lost {
+      color: #e74c3c;
+    }
+  </style>
 </head>
 <body>
-    <div id="root"></div>
-    <script src="app.js"></script>
+  <div id="desc">
+    <b>Çizgi Film Temalı 4 Katlı Bina Oyunu</b><br>
+    1. şahıs bakış açısı ile 4 katlı bir binadan aşağı inmeye çalış! Her katta iki delik var, biri lav, biri güvenli.<br>
+    Lava düşersen kaybedersin. 1. kata ulaşan kazanır.<br>
+    <i>Yön Tuşları (<b>←</b> & <b>→</b>) ile hareket et, <b>Boşluk</b> ile deliğe atla.</i>
+  </div>
+  <canvas id="gameCanvas" width="600" height="440"></canvas>
+  <div id="ui">
+    <button onclick="restartGame()">Yeniden Başlat</button>
+    <div id="status"></div>
+    <div id="result"></div>
+  </div>
+  <script>
+    // --- Oyun Sabitleri ---
+    const KAT_COUNT = 4;
+    const CANVAS_W = 600, CANVAS_H = 440;
+    const PLAYER_W = 36, PLAYER_H = 56;
+    const HOLE_W = 70, HOLE_H = 30;
+    const FLOOR_H = 90;
+    const PLAYER_START_X = CANVAS_W/2 - PLAYER_W/2;
+    const HOLE_Y_OFFSET = 28;
+    const HOLE_XS = [CANVAS_W/3-HOLE_W/2, 2*CANVAS_W/3-HOLE_W/2];
+    const FLOOR_COLORS = ["#ffe8a1", "#fdebdb", "#d7faff", "#e2ffe6"];
+    const HOLE_COLORS = ["#ff5757", "#73d673"];
+    const LAVA_COLOR = "#f55742";
+    const SAFE_COLOR = "#6bff94";
+    const CARTOON_BG = [
+      "#ffe8a1", "#fdebdb", "#d7faff", "#e2ffe6"
+    ];
+    // --- Oyun Durumu ---
+    let currentFloor, playerX, playerY, canJump, resultText, lost, safeHoleIdx, isJumping, jumpProgress;
+
+    function restartGame() {
+      currentFloor = KAT_COUNT;
+      playerX = PLAYER_START_X;
+      playerY = CANVAS_H - FLOOR_H * currentFloor + 8;
+      canJump = true;
+      resultText = "";
+      lost = false;
+      isJumping = false;
+      jumpProgress = 0;
+      safeHoleIdx = Math.floor(Math.random()*2);
+      renderStatus();
+      document.getElementById('result').textContent = '';
+      document.getElementById('result').className = '';
+      drawGame();
+    }
+
+    function renderStatus() {
+      document.getElementById('status').textContent =
+        lost ? "Lava düştün! Kaybettin." :
+        (currentFloor === 1 ? "1. Kata indin! Kazandın!" :
+          `${currentFloor}. Kattasın`);
+    }
+
+    // --- Ana Çizim Fonksiyonu ---
+    function drawGame() {
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0,0,CANVAS_W,CANVAS_H);
+
+      // --- Arka Plan ---
+      ctx.fillStyle = "#c2e9fb";
+      ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
+
+      // --- Katları Çiz ---
+      for(let k=KAT_COUNT; k>=1; k--) {
+        ctx.fillStyle = FLOOR_COLORS[k-1];
+        ctx.fillRect(0,CANVAS_H-FLOOR_H*k,CANVAS_W,FLOOR_H);
+        // Çizgi film bulutları (her katta)
+        for(let i=0;i<2;i++){
+          ctx.save();
+          ctx.globalAlpha = 0.16+0.09*k;
+          ctx.beginPath();
+          ctx.arc(80+180*i, CANVAS_H-FLOOR_H*k+24, 38+10*k, 0, 2*Math.PI);
+          ctx.fillStyle = "#fff";
+          ctx.fill();
+          ctx.restore();
+        }
+        ctx.strokeStyle="#eccb60";
+        ctx.lineWidth=2;
+        ctx.beginPath();
+        ctx.moveTo(0,CANVAS_H-FLOOR_H*k);
+        ctx.lineTo(CANVAS_W,CANVAS_H-FLOOR_H*k);
+        ctx.stroke();
+      }
+
+      // --- Delikleri Çiz (Sadece currentFloor'da) ---
+      if(!lost && currentFloor>1){
+        let floorY = CANVAS_H-FLOOR_H*currentFloor+HOLE_Y_OFFSET;
+        for(let h=0;h<2;h++){
+          ctx.save();
+          ctx.shadowColor="#222";
+          ctx.shadowBlur=10;
+          ctx.beginPath();
+          ctx.ellipse(HOLE_XS[h]+HOLE_W/2,floorY,HOLE_W/2,HOLE_H/2,0,0,2*Math.PI);
+          ctx.fillStyle = "#222";
+          ctx.fill();
+          ctx.restore();
+          // Çizgi film efekti
+          ctx.lineWidth=3;
+          ctx.strokeStyle= h===safeHoleIdx?SAFE_COLOR:LAVA_COLOR;
+          ctx.stroke();
+          ctx.font="20px Comic Sans MS";
+          ctx.fillStyle= h===safeHoleIdx?SAFE_COLOR:LAVA_COLOR;
+          ctx.fillText(h===safeHoleIdx?"Çimen":"LAV",HOLE_XS[h]+HOLE_W/2-22,floorY+8);
+        }
+      }
+
+      // --- Oyuncu (1. şahıs bakış açısı: Elleri ve ayakları) ---
+      if(!lost){
+        // Ayakları
+        ctx.save();
+        ctx.translate(playerX+PLAYER_W/2,playerY+PLAYER_H-7);
+        ctx.rotate(Math.sin(Date.now()/200)/5);
+        ctx.fillStyle="#f6d96c";
+        ctx.beginPath();
+        ctx.arc(-12,0,13,0,Math.PI*2);
+        ctx.arc(12,0,13,0,Math.PI*2);
+        ctx.fill();
+        ctx.restore();
+        // Gövde
+        ctx.fillStyle="#f6d96c";
+        ctx.fillRect(playerX,playerY,PLAYER_W,PLAYER_H-16);
+        // Kafa
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(playerX+PLAYER_W/2,playerY+14,18,0,2*Math.PI);
+        ctx.fillStyle="#ffe7b8";
+        ctx.shadowColor="#eccb60";
+        ctx.shadowBlur=10;
+        ctx.fill();
+        ctx.restore();
+        // Gözler
+        ctx.beginPath();
+        ctx.arc(playerX+PLAYER_W/2-6,playerY+10,4,0,2*Math.PI);
+        ctx.arc(playerX+PLAYER_W/2+6,playerY+10,4,0,2*Math.PI);
+        ctx.fillStyle="#333";
+        ctx.fill();
+        // Eller (yanlarda)
+        ctx.save();
+        ctx.translate(playerX+PLAYER_W/2,playerY+24);
+        ctx.rotate(Math.sin(Date.now()/380)/9);
+        ctx.fillStyle="#ffe7b8";
+        ctx.beginPath();
+        ctx.arc(-PLAYER_W/2-7,0,10,0,2*Math.PI);
+        ctx.arc(PLAYER_W/2+7,0,10,0,2*Math.PI);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // --- Jumping Animasyonu ---
+      if(isJumping){
+        let t=jumpProgress/18;
+        ctx.save();
+        ctx.globalAlpha=0.8;
+        ctx.beginPath();
+        ctx.ellipse(playerX+PLAYER_W/2,playerY+PLAYER_H+10,24*(1-t),7,0,0,2*Math.PI);
+        ctx.fillStyle="#000";
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // --- Sonuç ---
+      if(resultText){
+        ctx.font="30px Comic Sans MS";
+        ctx.fillStyle=lost?LAVA_COLOR:SAFE_COLOR;
+        ctx.textAlign="center";
+        ctx.fillText(resultText,CANVAS_W/2,CANVAS_H/2-30);
+      }
+    }
+
+    // --- Kontroller ---
+    window.addEventListener("keydown",(e)=>{
+      if(lost || currentFloor===1) return;
+      if(isJumping) return;
+      if(e.key==="ArrowLeft"){
+        playerX=Math.max(playerX-32,HOLE_XS[0]-PLAYER_W/2-18);
+        drawGame();
+      }else if(e.key==="ArrowRight"){
+        playerX=Math.min(playerX+32,HOLE_XS[1]+HOLE_W/2-PLAYER_W/2+18);
+        drawGame();
+      }else if(e.key===" " && canJump){
+        // Deliklerin birine denk mi?
+        for(let h=0;h<2;h++){
+          let hx=HOLE_XS[h]+HOLE_W/2;
+          if(Math.abs(playerX+PLAYER_W/2-hx)<HOLE_W/2){
+            jumpHole(h);
+            break;
+          }
+        }
+      }
+    });
+
+    // --- Deliğe Atla Fonksiyonu ---
+    function jumpHole(idx){
+      canJump=false;
+      isJumping=true;
+      jumpProgress=0;
+      function anim(){
+        jumpProgress++;
+        playerY+=5;
+        drawGame();
+        if(jumpProgress<18){
+          requestAnimationFrame(anim);
+        }else{
+          isJumping=false;
+          playerY = CANVAS_H - FLOOR_H * (currentFloor-1) + 8;
+          // Sonucu kontrol et
+          if(idx===safeHoleIdx){
+            currentFloor--;
+            resultText="Güvenli geçtin!";
+            if(currentFloor===1){
+              resultText="Kazandın! 1. Kata ulaştın!";
+              document.getElementById('result').textContent = "Kazandın! 🎉";
+              document.getElementById('result').className = '';
+            }
+          }else{
+            lost=true;
+            resultText="Lava düştün!";
+            document.getElementById('result').textContent = "Kaybettin! 💀 Lava düştün";
+            document.getElementById('result').className = 'lost';
+          }
+          canJump=true;
+          safeHoleIdx = Math.floor(Math.random()*2);
+          renderStatus();
+          setTimeout(()=>{
+            resultText="";
+            drawGame();
+          },1500);
+          drawGame();
+        }
+      }
+      anim();
+    }
+
+    // --- Başlat ---
+    const canvas = document.getElementById("gameCanvas");
+    restartGame();
+    drawGame();
+  </script>
 </body>
-</html>
+    </html>
